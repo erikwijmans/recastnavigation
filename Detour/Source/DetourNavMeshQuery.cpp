@@ -1018,6 +1018,34 @@ dtStatus dtNavMeshQuery::findPath(dtPolyRef startRef, dtPolyRef endRef,
 								  const dtQueryFilter* filter,
 								  dtPolyRef* path, int* pathCount, const int maxPath) const
 {
+	return findPathFromAny(1, &startRef, endRef, startPos, endPos,
+			filter, path, pathCount, maxPath, false, 0);
+}
+
+dtStatus dtNavMeshQuery::findBidirPathToAny(const int numGoals, dtPolyRef startRef, const dtPolyRef* endRefs,
+								  const float* startPos, const float* endPoses,
+								  const dtQueryFilter* filter,
+								  dtPolyRef* path, int* pathCount, const int maxPath, int* foundGoalIdx) const
+{
+	dtStatus status = findPathFromAny(numGoals, endRefs, startRef, endPoses, startPos,
+			filter, path, pathCount, maxPath, true, foundGoalIdx);
+
+	// Reverse the path
+	for (int i = 0; i < (*pathCount)/2; ++i)
+	{
+		dtSwap(path[i], path[*pathCount - 1 - i]);
+	}
+
+	return status;
+}
+
+
+dtStatus dtNavMeshQuery::findPathFromAny(const int numStarts, const dtPolyRef* startRefs, dtPolyRef endRef,
+								  const float* startPoses, const float* endPos,
+								  const dtQueryFilter* filter,
+								  dtPolyRef* path, int* pathCount, const int maxPath,
+								  const bool reversedSearch, int* startIdx) const
+{
 	dtAssert(m_nav);
 	dtAssert(m_nodePool);
 	dtAssert(m_openList);
@@ -1026,31 +1054,45 @@ dtStatus dtNavMeshQuery::findPath(dtPolyRef startRef, dtPolyRef endRef,
 		*pathCount = 0;
 	
 	// Validate input
-	if (!m_nav->isValidPolyRef(startRef) || !m_nav->isValidPolyRef(endRef) ||
-		!startPos || !endPos || !filter || maxPath <= 0 || !path || !pathCount)
+	if (!m_nav->isValidPolyRef(endRef) ||
+		!startPoses || !endPos || !filter || maxPath <= 0 || !path || !pathCount)
 		return DT_FAILURE | DT_INVALID_PARAM;
 
-	if (startRef == endRef)
+	for (int i = 0; i < numStarts; ++i)
+		if (!m_nav->isValidPolyRef(startRefs[i]))
+			return DT_FAILURE | DT_INVALID_PARAM;
+
+	for (int i = 0; i < numStarts; ++i)
 	{
-		path[0] = startRef;
-		*pathCount = 1;
-		return DT_SUCCESS;
+		if (startRefs[i] == endRef)
+		{
+			path[0] = startRefs[i];
+			*pathCount = 1;
+			if (startIdx)
+				*startIdx = i;
+			return DT_SUCCESS;
+		}
 	}
 	
 	m_nodePool->clear();
 	m_openList->clear();
+	for (int i = 0; i < numStarts; ++i)
+	{
+		// Put each start node at a unique state.  This handles the
+		// case where there are multiple start positions on the same polygon
+		// and lets us easly know which start was used to reach the goal
+		dtNode* startNode = m_nodePool->getNode(startRefs[i], i);
+		dtVcopy(startNode->pos, startPoses + (3 * i));
+		startNode->pidx = 0;
+		startNode->cost = 0;
+		startNode->total = dtVdist(startNode->pos, endPos) * H_SCALE;
+		startNode->id = startRefs[i];
+		startNode->flags = DT_NODE_OPEN;
+		m_openList->push(startNode);
+	}
 	
-	dtNode* startNode = m_nodePool->getNode(startRef);
-	dtVcopy(startNode->pos, startPos);
-	startNode->pidx = 0;
-	startNode->cost = 0;
-	startNode->total = dtVdist(startPos, endPos) * H_SCALE;
-	startNode->id = startRef;
-	startNode->flags = DT_NODE_OPEN;
-	m_openList->push(startNode);
-	
-	dtNode* lastBestNode = startNode;
-	float lastBestNodeCost = startNode->total;
+	dtNode* lastBestNode = m_openList->top();
+	float lastBestNodeCost = lastBestNode->total;
 	
 	bool outOfNodes = false;
 	
@@ -1091,7 +1133,7 @@ dtStatus dtNavMeshQuery::findPath(dtPolyRef startRef, dtPolyRef endRef,
 			// Skip invalid ids and do not expand back to where we came from.
 			if (!neighbourRef || neighbourRef == parentRef)
 				continue;
-			
+
 			// Get neighbour poly and tile.
 			// The API input has been cheked already, skip checking internal data.
 			const dtMeshTile* neighbourTile = 0;
@@ -1100,6 +1142,13 @@ dtStatus dtNavMeshQuery::findPath(dtPolyRef startRef, dtPolyRef endRef,
 			
 			if (!filter->passFilter(neighbourRef, neighbourTile, neighbourPoly))
 				continue;
+
+			if (reversedSearch && neighbourPoly->getType() == DT_POLYTYPE_OFFMESH_CONNECTION)
+			{
+				const dtOffMeshConnection* con = m_nav->getOffMeshConnectionByRef(neighbourRef);
+				if (!con || !(con->flags & DT_OFFMESH_CON_BIDIR))
+					continue;
+			}
 
 			// deal explicitly with crossing tile boundaries
 			unsigned char crossSide = 0;
@@ -1190,7 +1239,7 @@ dtStatus dtNavMeshQuery::findPath(dtPolyRef startRef, dtPolyRef endRef,
 		}
 	}
 
-	dtStatus status = getPathToNode(lastBestNode, path, pathCount, maxPath);
+	dtStatus status = getPathToNode(lastBestNode, path, pathCount, maxPath, startIdx);
 
 	if (lastBestNode->id != endRef)
 		status |= DT_PARTIAL_RESULT;
@@ -1201,7 +1250,7 @@ dtStatus dtNavMeshQuery::findPath(dtPolyRef startRef, dtPolyRef endRef,
 	return status;
 }
 
-dtStatus dtNavMeshQuery::getPathToNode(dtNode* endNode, dtPolyRef* path, int* pathCount, int maxPath) const
+dtStatus dtNavMeshQuery::getPathToNode(dtNode* endNode, dtPolyRef* path, int* pathCount, int maxPath, int* startIdx) const
 {
 	// Find the length of the entire path.
 	dtNode* curNode = endNode;
@@ -1228,6 +1277,9 @@ dtStatus dtNavMeshQuery::getPathToNode(dtNode* endNode, dtPolyRef* path, int* pa
 		dtAssert(curNode);
 
 		path[i] = curNode->id;
+		if (i == 0 && startIdx)
+			*startIdx = curNode->state;
+
 		curNode = m_nodePool->getNodeAtIdx(curNode->pidx);
 	}
 
@@ -3056,7 +3108,7 @@ dtStatus dtNavMeshQuery::getPathFromDijkstraSearch(dtPolyRef endRef, dtPolyRef* 
 		(endNode->flags & DT_NODE_CLOSED) == 0)
 		return DT_FAILURE | DT_INVALID_PARAM;
 
-	return getPathToNode(endNode, path, pathCount, maxPath);
+	return getPathToNode(endNode, path, pathCount, maxPath, 0);
 }
 
 /// @par
