@@ -2065,7 +2065,7 @@ dtStatus dtNavMeshQuery::findStraightPath(const float* startPos, const float* en
 ///
 dtStatus dtNavMeshQuery::moveAlongSurface(dtPolyRef startRef, const float* startPos, const float* endPos,
 										  const dtQueryFilter* filter,
-										  float* resultPos, dtPolyRef* visited, int* visitedCount, const int maxVisitedSize) const
+										  float* resultPos, dtPolyRef* visited, int* visitedCount, const int maxVisitedSize, bool allowSliding) const
 {
 	dtAssert(m_nav);
 	dtAssert(m_tinyNodePool);
@@ -2111,7 +2111,7 @@ dtStatus dtNavMeshQuery::moveAlongSurface(dtPolyRef startRef, const float* start
 	searchRadSqr = dtSqr(dtVdist(startPos, endPos)/2.0f + 0.001f);
 	
 	float verts[DT_VERTS_PER_POLYGON*3];
-	
+
 	while (nstack)
 	{
 		// Pop front.
@@ -2186,14 +2186,40 @@ dtStatus dtNavMeshQuery::moveAlongSurface(dtPolyRef startRef, const float* start
 				// Wall edge, calc distance.
 				const float* vj = &verts[j*3];
 				const float* vi = &verts[i*3];
-				float tseg;
-				const float distSqr = dtDistancePtSegSqr2D(endPos, vj, vi, tseg);
-				if (distSqr < bestDist)
+
+				if (!allowSliding) 
 				{
-                    // Update nearest distance.
-					dtVlerp(bestPos, vj,vi, tseg);
-					bestDist = distSqr;
-					bestNode = curNode;
+						float s, t;
+						if (dtIntersectSegSeg2D(vj, vi, startPos, endPos, s, t) 
+								&& t >= 0 && t <= 1 && s >= 0 && s <= 1)
+						{
+							// If sliding is not allowed, then the candidate end position will be
+							// where startPos -> endPos and vj -> vi intersect
+							float newPos[3];
+							dtVlerp(newPos, vj, vi, s);
+							const float distSqr = dtVdist2DSqr(newPos, endPos);
+
+							if (distSqr < bestDist)
+							{
+								dtVcopy(bestPos, newPos);
+								bestDist = distSqr;
+								bestNode = curNode;
+							}
+						}
+				} 
+				else 
+				{
+					float tseg;
+					const float distSqr = dtDistancePtSegSqr2D(endPos, vj, vi, tseg);
+
+					if (distSqr < bestDist)
+					{
+
+						// Update nearest distance.
+						dtVlerp(bestPos, vj, vi, tseg);
+						bestDist = distSqr;
+						bestNode = curNode;
+					}
 				}
 			}
 			else
@@ -2216,6 +2242,18 @@ dtStatus dtNavMeshQuery::moveAlongSurface(dtPolyRef startRef, const float* start
 					float distSqr = dtDistancePtSegSqr2D(searchPos, vj, vi, tseg);
 					if (distSqr > searchRadSqr)
 						continue;
+
+					if (!allowSliding)
+					{
+						float s, t;
+						// If sliding is not allowed, then we need to be able to travel along
+						// startPos -> endPos and intersect the edge of the polygon vj -> vi
+						if (!(dtIntersectSegSeg2D(vj, vi, startPos, endPos, s, t) 
+								&& t >= 0 && t <= 1 && s >= 0 && s <= 1))
+						{
+							continue;
+						}
+					}
 					
 					// Mark as the node as visited and push to queue.
 					if (nstack < MAX_STACK)
