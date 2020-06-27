@@ -75,6 +75,19 @@ struct dtTileCachePolyMesh
 	unsigned char* areas;	///< Area ID of polygons.
 };
 
+/// Contains triangle meshes that represent detailed height data associated 
+/// with the polygons in its associated polygon mesh object.
+/// @ingroup recast
+struct dtTileCachePolyMeshDetail
+{
+	unsigned int* meshes;	///< The sub-mesh data. [Size: 4*#nmeshes] 
+	float* verts;			///< The mesh vertices. [Size: 3*#nverts] 
+	unsigned char* tris;	///< The mesh triangles. [Size: 4*#ntris] 
+	int nmeshes;			///< The number of sub-meshes defined by #meshes.
+	int nverts;				///< The number of vertices in #verts.
+	int ntris;				///< The number of triangles in #tris.
+};
+
 
 struct dtTileCacheAlloc
 {
@@ -123,6 +136,9 @@ void dtFreeTileCacheContourSet(dtTileCacheAlloc* alloc, dtTileCacheContourSet* c
 
 dtTileCachePolyMesh* dtAllocTileCachePolyMesh(dtTileCacheAlloc* alloc);
 void dtFreeTileCachePolyMesh(dtTileCacheAlloc* alloc, dtTileCachePolyMesh* lmesh);
+
+dtTileCachePolyMeshDetail* dtAllocTileCachePolyMeshDetail(dtTileCacheAlloc* alloc);
+void dtFreeTileCachePolyMeshDetail(dtTileCacheAlloc* alloc, dtTileCachePolyMeshDetail* dmesh);
 
 dtStatus dtMarkCylinderArea(dtTileCacheLayer& layer, const float* orig, const float cs, const float ch,
 							const float* pos, const float radius, const float height, const unsigned char areaId);

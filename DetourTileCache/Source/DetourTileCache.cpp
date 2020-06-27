@@ -477,8 +477,7 @@ dtStatus dtTileCache::removeObstacle(const dtObstacleRef ref)
 dtStatus dtTileCache::queryTiles(const float* bmin, const float* bmax,
 								 dtCompressedTileRef* results, int* resultCount, const int maxResults) const 
 {
-	const int MAX_TILES = 32;
-	dtCompressedTileRef tiles[MAX_TILES];
+	dtCompressedTileRef tiles[DT_MAX_TOUCHED_TILES];
 	
 	int n = 0;
 	
@@ -493,7 +492,7 @@ dtStatus dtTileCache::queryTiles(const float* bmin, const float* bmax,
 	{
 		for (int tx = tx0; tx <= tx1; ++tx)
 		{
-			const int ntiles = getTilesAt(tx,ty,tiles,MAX_TILES);
+			const int ntiles = getTilesAt(tx,ty,tiles,DT_MAX_TOUCHED_TILES);
 			
 			for (int i = 0; i < ntiles; ++i)
 			{
@@ -701,23 +700,26 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	
 	// Build navmesh
 	status = dtBuildTileCacheRegions(m_talloc, *bc.layer, walkableClimbVx);
-	if (dtStatusFailed(status))
+	if (dtStatusFailed(status)) {
 		return status;
+	}
 	
 	bc.lcset = dtAllocTileCacheContourSet(m_talloc);
 	if (!bc.lcset)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 	status = dtBuildTileCacheContours(m_talloc, *bc.layer, walkableClimbVx,
 									  m_params.maxSimplificationError, *bc.lcset);
-	if (dtStatusFailed(status))
+	if (dtStatusFailed(status)) {
 		return status;
+	}
 	
 	bc.lmesh = dtAllocTileCachePolyMesh(m_talloc);
 	if (!bc.lmesh)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 	status = dtBuildTileCachePolyMesh(m_talloc, *bc.lcset, *bc.lmesh);
-	if (dtStatusFailed(status))
+	if (dtStatusFailed(status)) {
 		return status;
+	}
 	
 	// Early out if the mesh tile is empty.
 	if (!bc.lmesh->npolys)

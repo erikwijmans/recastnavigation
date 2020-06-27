@@ -62,7 +62,7 @@ struct dtObstacleOrientedBox
 	float rotAux[ 2 ]; //{ cos(0.5f*angle)*sin(-0.5f*angle); cos(0.5f*angle)*cos(0.5f*angle) - 0.5 }
 };
 
-static const int DT_MAX_TOUCHED_TILES = 8;
+static const int DT_MAX_TOUCHED_TILES = 256;
 struct dtTileCacheObstacle
 {
 	union
@@ -247,11 +247,11 @@ private:
 	dtTileCacheObstacle* m_obstacles;
 	dtTileCacheObstacle* m_nextFreeObstacle;
 	
-	static const int MAX_REQUESTS = 64;
+	static const int MAX_REQUESTS = 1024;
 	ObstacleRequest m_reqs[MAX_REQUESTS];
 	int m_nreqs;
 	
-	static const int MAX_UPDATE = 64;
+	static const int MAX_UPDATE = 1024;
 	dtCompressedTileRef m_update[MAX_UPDATE];
 	int m_nupdate;
 };
